@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AFTERCOIN Admin Dashboard</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+    <header id="header">
+        <div class="header-left">
+            <h1>AFTERCOIN</h1>
+            <span class="subtitle">Admin Control Center</span>
+        </div>
+        <div class="header-center">
+            <div class="game-status" id="gameStatus">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">OFFLINE</span>
+            </div>
+            <div class="game-timer">
+                <span>HOUR:</span>
+                <span id="currentHour" class="mono">0</span>
+                <span class="sep">|</span>
+                <span>PHASE:</span>
+                <span id="currentPhase" class="mono">pre_game</span>
+                <span class="sep">|</span>
+                <span>AGENTS:</span>
+                <span id="agentsRemaining" class="mono">10</span>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="price-display">
+                <span>AFC/EUR</span>
+                <span id="currentPrice" class="price mono">€932.17</span>
+                <span id="priceChange" class="change"></span>
+            </div>
+        </div>
+    </header>
+
+    <main class="dashboard-grid">
+        <!-- TOP LEFT: Market Chart -->
+        <section class="panel" id="marketPanel">
+            <div class="panel-header">
+                <h2>Real-Time Market</h2>
+                <div class="panel-controls">
+                    <span id="totalVolume" class="badge">Vol: 0.0</span>
+                </div>
+            </div>
+            <div class="panel-body">
+                <canvas id="priceChart" width="600" height="250"></canvas>
+                <div class="market-stats">
+                    <div class="stat">
+                        <label>24h High</label>
+                        <span id="priceHigh" class="mono">€932.17</span>
+                    </div>
+                    <div class="stat">
+                        <label>24h Low</label>
+                        <span id="priceLow" class="mono">€932.17</span>
+                    </div>
+                    <div class="stat">
+                        <label>Volatility</label>
+                        <span id="volatility" class="mono">0.00%</span>
+                    </div>
+                    <div class="stat">
+                        <label>Total Circulation</label>
+                        <span id="circulation" class="mono">100.0 AFC</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TOP RIGHT: Activity Feed -->
+        <section class="panel" id="activityPanel">
+            <div class="panel-header">
+                <h2>Agent Activity Feed</h2>
+                <div class="panel-controls">
+                    <select id="feedFilter">
+                        <option value="all">All</option>
+                        <option value="trades">Trades</option>
+                        <option value="social">Posts</option>
+                        <option value="alliances">Alliances</option>
+                        <option value="dark_market">Dark Market</option>
+                        <option value="agent_decisions">Decisions</option>
+                        <option value="events">Events</option>
+                    </select>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div id="activityFeed" class="feed"></div>
+            </div>
+        </section>
+
+        <!-- BOTTOM LEFT: Agent Status Grid -->
+        <section class="panel" id="agentPanel">
+            <div class="panel-header">
+                <h2>Agent Status</h2>
+                <div class="panel-controls">
+                    <button class="btn-sm" onclick="refreshAgents()">Refresh</button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div id="agentGrid" class="agent-grid"></div>
+            </div>
+        </section>
+
+        <!-- BOTTOM RIGHT: Intervention Controls -->
+        <section class="panel" id="controlPanel">
+            <div class="panel-header">
+                <h2>Intervention Controls</h2>
+            </div>
+            <div class="panel-body controls-body">
+                <!-- Game Controls -->
+                <div class="control-section">
+                    <h3>Game</h3>
+                    <div class="btn-group">
+                        <button class="btn btn-green" onclick="startGame()">Start Game</button>
+                        <button class="btn btn-red" onclick="stopGame()">Stop Game</button>
+                    </div>
+                </div>
+
+                <!-- Market Events -->
+                <div class="control-section">
+                    <h3>Market Events</h3>
+                    <div class="btn-group">
+                        <button class="btn btn-yellow" onclick="triggerEvent('flash_crash')">Flash Crash</button>
+                        <button class="btn btn-green" onclick="triggerEvent('whale_alert')">Whale Alert</button>
+                        <button class="btn btn-green" onclick="triggerEvent('final_pump')">Pump</button>
+                        <button class="btn btn-yellow" onclick="triggerEvent('fee_increase')">Fee Spike</button>
+                        <button class="btn btn-red" onclick="triggerEvent('margin_call')">Margin Call</button>
+                        <button class="btn btn-yellow" onclick="triggerEvent('security_breach')">Freeze</button>
+                    </div>
+                </div>
+
+                <!-- Social Events -->
+                <div class="control-section">
+                    <h3>Social Events</h3>
+                    <div class="btn-group">
+                        <button class="btn btn-purple" onclick="triggerEvent('tribunal')">Tribunal Vote</button>
+                        <button class="btn btn-purple" onclick="triggerEvent('fake_leak')">Leak Intel</button>
+                        <button class="btn btn-red" onclick="triggerEvent('gaslighting')">Gaslighting</button>
+                    </div>
+                </div>
+
+                <!-- Direct Manipulation -->
+                <div class="control-section">
+                    <h3>Direct Manipulation</h3>
+                    <div class="control-form">
+                        <select id="targetAgent">
+                            <option value="">Select Agent...</option>
+                        </select>
+                        <select id="manipAction">
+                            <option value="modify_balance">Modify Balance</option>
+                            <option value="modify_reputation">Modify Reputation</option>
+                            <option value="gaslighting">Gaslighting</option>
+                            <option value="fake_whisper">Fake Whisper</option>
+                            <option value="force_eliminate">Force Eliminate</option>
+                        </select>
+                        <input type="text" id="manipValue" placeholder="Amount / Message">
+                        <input type="text" id="manipReason" placeholder="Reason">
+                        <button class="btn btn-red" onclick="executeManipulation()">EXECUTE</button>
+                    </div>
+                </div>
+
+                <!-- Trading Controls -->
+                <div class="control-section">
+                    <h3>Trading</h3>
+                    <div class="btn-group">
+                        <button class="btn btn-red" onclick="freezeTrading()">Freeze Trading</button>
+                        <button class="btn btn-green" onclick="unfreezeTrading()">Unfreeze Trading</button>
+                    </div>
+                </div>
+
+                <!-- Analytics -->
+                <div class="control-section">
+                    <h3>Analytics</h3>
+                    <div class="btn-group">
+                        <button class="btn btn-blue" onclick="showAnalytics('summary')">Summary</button>
+                        <button class="btn btn-blue" onclick="showAnalytics('social-network')">Social Graph</button>
+                        <button class="btn btn-blue" onclick="showAnalytics('emotions')">Emotions</button>
+                        <button class="btn btn-blue" onclick="exportData()">Export Data</button>
+                    </div>
+                </div>
+
+                <!-- Admin Log -->
+                <div class="control-section">
+                    <h3>Admin Log</h3>
+                    <div id="adminLog" class="admin-log"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modal for detailed views -->
+    <div id="modal" class="modal hidden">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+            <div id="modalBody"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
