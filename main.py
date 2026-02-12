@@ -161,6 +161,12 @@ async def dashboard(request: Request):
     return templates.TemplateResponse("dashboard.html", {"request": request})
 
 
+@app.get("/feed", response_class=HTMLResponse)
+async def feed_view(request: Request):
+    """Serve the social feed viewer."""
+    return templates.TemplateResponse("feed.html", {"request": request})
+
+
 @app.get("/")
 async def root():
     """Root endpoint with platform info."""

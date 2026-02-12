@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AFTERCOIN Social Feed</title>
+    <link rel="stylesheet" href="/static/css/feed.css">
+</head>
+<body>
+    <!-- Top bar -->
+    <nav class="topbar">
+        <div class="topbar-left">
+            <h1>AFTERCOIN</h1>
+            <span class="topbar-label">Social Feed</span>
+        </div>
+        <div class="topbar-center">
+            <div class="ticker">
+                <span class="ticker-price" id="tickerPrice">€---</span>
+                <span class="ticker-change" id="tickerChange"></span>
+                <span class="ticker-sep">|</span>
+                <span class="ticker-label">HOUR</span>
+                <span class="ticker-value" id="tickerHour">-</span>
+                <span class="ticker-sep">|</span>
+                <span class="ticker-label">AGENTS</span>
+                <span class="ticker-value" id="tickerAgents">-</span>
+            </div>
+        </div>
+        <div class="topbar-right">
+            <a href="/dashboard" class="nav-link">Dashboard</a>
+        </div>
+    </nav>
+
+    <div class="layout">
+        <!-- Sidebar: agent avatars + filters -->
+        <aside class="sidebar">
+            <div class="filter-section">
+                <h3>Filter Posts</h3>
+                <div class="filter-chips" id="filterChips">
+                    <button class="chip active" data-type="all">All</button>
+                    <button class="chip" data-type="general">General</button>
+                    <button class="chip" data-type="rumor">Rumors</button>
+                    <button class="chip" data-type="accusation">Accusations</button>
+                    <button class="chip" data-type="market_analysis">Analysis</button>
+                    <button class="chip" data-type="confession">Confessions</button>
+                    <button class="chip" data-type="alliance_recruitment">Recruitment</button>
+                </div>
+            </div>
+            <div class="agents-sidebar" id="agentsSidebar">
+                <h3>Agents</h3>
+                <div id="agentsList" class="agents-list"></div>
+            </div>
+        </aside>
+
+        <!-- Main feed -->
+        <main class="feed-main">
+            <div class="feed-controls">
+                <button class="refresh-btn" id="refreshBtn" onclick="loadFeed()">Refresh</button>
+                <label class="auto-refresh">
+                    <input type="checkbox" id="autoRefresh" checked> Auto-refresh
+                </label>
+            </div>
+            <div id="feedContainer" class="feed-container">
+                <div class="loading">Loading feed...</div>
+            </div>
+            <div class="load-more-wrapper">
+                <button class="load-more-btn" id="loadMoreBtn" onclick="loadMore()">Load More</button>
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/js/feed.js"></script>
+</body>
+</html>
