@@ -594,12 +594,113 @@ async function fetchLeaderboard() {
     } catch (e) { /* silent */ }
 }
 
+// ── Initial Data Loading ──────────────────────────────────────────────────────
+async function loadPriceHistory() {
+    try {
+        const res = await fetch(`${API_BASE}/game/price?limit=200`);
+        const json = await res.json();
+        const data = json.data || json;
+        if (data.history && Array.isArray(data.history)) {
+            data.history.forEach(h => {
+                const price = h.price_eur || h.price;
+                if (price) {
+                    state.priceHistory.push({ price, time: new Date(h.timestamp || h.created_at).getTime() });
+                    if (price > state.priceHigh) state.priceHigh = price;
+                    if (price < state.priceLow) state.priceLow = price;
+                }
+            });
+            if (state.priceHistory.length > state.maxPriceHistory) {
+                state.priceHistory = state.priceHistory.slice(-state.maxPriceHistory);
+            }
+            drawPriceChart();
+        }
+        if (data.current_price) {
+            state.currentPrice = data.current_price;
+            document.getElementById('currentPrice').textContent = `€${formatAFC(data.current_price)}`;
+        }
+        if (data.buy_volume !== undefined || data.sell_volume !== undefined) {
+            const vol = (data.buy_volume || 0) + (data.sell_volume || 0);
+            document.getElementById('totalVolume').textContent = `Vol: ${formatAFC(vol)}`;
+        }
+        addAdminLog(`Loaded ${state.priceHistory.length} price points`);
+    } catch (e) { addAdminLog(`Price history load failed: ${e.message}`); }
+}
+
+async function loadRecentFeed() {
+    try {
+        const res = await fetch(`${API_BASE}/game/feed?limit=50`);
+        const json = await res.json();
+        const data = json.data || json;
+        const posts = data.posts || data.feed || (Array.isArray(data) ? data : []);
+        posts.reverse().forEach(p => {
+            const author = p.author_name || p.author || `Agent#${p.author_id}`;
+            const postType = p.post_type || p.type || 'general';
+            const preview = (p.content || p.preview || '').slice(0, 120);
+            addFeedItem('social', `${author} [${postType}]: "${preview}"`, 'blue');
+        });
+        addAdminLog(`Loaded ${posts.length} recent posts`);
+    } catch (e) { addAdminLog(`Feed load failed: ${e.message}`); }
+}
+
+async function loadRecentEvents() {
+    try {
+        const res = await fetch(`${API_BASE}/game/events`);
+        const json = await res.json();
+        const data = json.data || json;
+        const events = data.events || (Array.isArray(data) ? data : []);
+        events.forEach(ev => {
+            if (ev.is_triggered || ev.triggered) {
+                const desc = ev.description || ev.event_type || 'System event';
+                addFeedItem('events', `SYSTEM: ${desc}`, 'yellow');
+                if (ev.price_impact_pct || ev.price_impact) {
+                    const impact = ev.price_impact_pct || ev.price_impact;
+                    addFeedItem('events', `  → Price impact: ${impact > 0 ? '+' : ''}${impact}%`, 'yellow');
+                }
+            }
+        });
+        addAdminLog(`Loaded system events`);
+    } catch (e) { addAdminLog(`Events load failed: ${e.message}`); }
+}
+
+async function loadRecentActivity() {
+    try {
+        const res = await adminFetch(`${API_BASE}/game/activity`);
+        if (!res.ok) return;
+        const json = await res.json();
+        const events = json.data || json.events || [];
+        events.forEach(ev => {
+            const { channel, event_type, data } = ev;
+            switch (channel) {
+                case 'trades':
+                    if (data) handleTradeEvent(event_type, data);
+                    break;
+                case 'agent_decisions':
+                    if (data) handleDecisionEvent(data);
+                    break;
+                case 'alliances':
+                    if (data) handleAllianceEvent(event_type, data);
+                    break;
+                case 'dark_market':
+                    if (data) handleDarkMarketEvent(event_type, data);
+                    break;
+            }
+        });
+        addAdminLog(`Loaded recent activity log`);
+    } catch (e) { /* endpoint may not exist yet */ }
+}
+
 // ── Initialization ────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     addAdminLog('Dashboard loaded');
     connectWS();
     updateGameState();
     refreshAgents();
+
+    // Load historical data on startup
+    loadPriceHistory();
+    loadRecentFeed();
+    loadRecentEvents();
+    loadRecentActivity();
 
     // Periodic refresh
     setInterval(updateGameState, 30000);

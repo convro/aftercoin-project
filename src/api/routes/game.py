@@ -14,6 +14,7 @@ from src.engine.events import EventsEngine
 from src.engine.market import MarketEngine
 from src.engine.social import SocialEngine
 from src.engine.alliance import AllianceEngine
+from src.websocket.broadcaster import broadcaster
 
 logger = logging.getLogger(__name__)
 
@@ -180,4 +181,24 @@ async def get_alliances():
         raise
     except Exception as exc:
         logger.exception("Failed to get alliances")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ── GET /game/activity ──────────────────────────────────────────────────────
+
+@router.get("/activity")
+async def get_recent_activity(
+    limit: int = Query(default=100, ge=1, le=500),
+    channel: Optional[str] = Query(default=None),
+):
+    """Return recent broadcast activity from the WebSocket event log.
+
+    This includes trades, agent decisions, alliance events, dark market
+    activity, and other real-time events that have been broadcast.
+    """
+    try:
+        events = broadcaster.get_recent_events(limit=limit, channel=channel)
+        return {"status": "ok", "data": events}
+    except Exception as exc:
+        logger.exception("Failed to get recent activity")
         raise HTTPException(status_code=500, detail=str(exc))
