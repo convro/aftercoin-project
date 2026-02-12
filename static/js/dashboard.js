@@ -3,10 +3,98 @@
 // ── Configuration ─────────────────────────────────────────────────────────────
 const API_BASE = window.location.origin;
 const WS_URL = `ws://${window.location.hostname}:8765`;
-let ADMIN_SECRET = localStorage.getItem('aftercoin_admin_secret');
-if (!ADMIN_SECRET) {
-    ADMIN_SECRET = prompt('Enter admin secret:', 'aftercoin-admin-2026') || 'aftercoin-admin-2026';
-    localStorage.setItem('aftercoin_admin_secret', ADMIN_SECRET);
+let ADMIN_SECRET = localStorage.getItem('aftercoin_admin_secret') || '';
+let _authVerified = false;
+
+// ── Auth Overlay ─────────────────────────────────────────────────────────────
+function showAuthOverlay() {
+    const overlay = document.createElement('div');
+    overlay.id = 'authOverlay';
+    overlay.innerHTML = `
+        <div style="position:fixed;inset:0;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;z-index:10000;">
+            <div style="background:#111827;border:1px solid #1e293b;border-radius:12px;padding:40px;max-width:400px;width:90%;text-align:center;">
+                <h1 style="color:#22c55e;font-family:'Courier New',monospace;margin-bottom:8px;font-size:28px;">AFTERCOIN</h1>
+                <p style="color:#64748b;margin-bottom:24px;font-size:13px;">Admin Dashboard Authentication</p>
+                <div id="authError" style="color:#ef4444;font-size:12px;margin-bottom:12px;display:none;"></div>
+                <input type="password" id="authSecretInput" placeholder="Enter admin secret..."
+                    style="width:100%;padding:12px 16px;background:#0a0e17;border:1px solid #1e293b;border-radius:8px;color:#e2e8f0;font-family:'Courier New',monospace;font-size:14px;margin-bottom:16px;outline:none;"
+                    autofocus>
+                <button id="authSubmitBtn" onclick="verifyAuth()"
+                    style="width:100%;padding:12px;background:#22c55e;color:#0a0e17;border:none;border-radius:8px;font-weight:bold;font-size:14px;cursor:pointer;">
+                    AUTHENTICATE
+                </button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    const input = document.getElementById('authSecretInput');
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') verifyAuth(); });
+    input.focus();
+}
+
+async function verifyAuth() {
+    const input = document.getElementById('authSecretInput');
+    const errorEl = document.getElementById('authError');
+    const btn = document.getElementById('authSubmitBtn');
+    const secret = input.value.trim();
+    if (!secret) {
+        errorEl.textContent = 'Please enter the admin secret.';
+        errorEl.style.display = 'block';
+        return;
+    }
+    btn.textContent = 'VERIFYING...';
+    btn.disabled = true;
+    try {
+        const res = await fetch(`${API_BASE}/game/state`, {
+            headers: { 'X-Admin-Secret': secret }
+        });
+        // game/state doesn't require auth, so also test an admin endpoint
+        const adminRes = await fetch(`${API_BASE}/admin/analytics/summary`, {
+            headers: { 'X-Admin-Secret': secret, 'Content-Type': 'application/json' }
+        });
+        if (adminRes.status === 403) {
+            errorEl.textContent = 'Invalid admin secret. Access denied.';
+            errorEl.style.display = 'block';
+            btn.textContent = 'AUTHENTICATE';
+            btn.disabled = false;
+            input.value = '';
+            input.focus();
+            return;
+        }
+        // Auth successful
+        ADMIN_SECRET = secret;
+        localStorage.setItem('aftercoin_admin_secret', secret);
+        _authVerified = true;
+        document.getElementById('authOverlay').remove();
+        initDashboard();
+    } catch (e) {
+        errorEl.textContent = 'Connection error. Is the server running?';
+        errorEl.style.display = 'block';
+        btn.textContent = 'AUTHENTICATE';
+        btn.disabled = false;
+    }
+}
+
+async function tryAutoAuth() {
+    if (!ADMIN_SECRET) {
+        showAuthOverlay();
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE}/admin/analytics/summary`, {
+            headers: { 'X-Admin-Secret': ADMIN_SECRET, 'Content-Type': 'application/json' }
+        });
+        if (res.status === 403) {
+            localStorage.removeItem('aftercoin_admin_secret');
+            ADMIN_SECRET = '';
+            showAuthOverlay();
+            return;
+        }
+        _authVerified = true;
+        initDashboard();
+    } catch (e) {
+        showAuthOverlay();
+    }
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -689,9 +777,39 @@ async function loadRecentActivity() {
     } catch (e) { /* endpoint may not exist yet */ }
 }
 
+// ── Game Reset ────────────────────────────────────────────────────────────────
+async function resetGame() {
+    if (!confirm('FULL GAME RESET: This will DELETE all data (trades, posts, agents, prices, everything) and restart from scratch.\n\nAre you absolutely sure?')) return;
+    if (!confirm('SECOND CONFIRMATION: All game data will be permanently destroyed. Continue?')) return;
+    try {
+        addAdminLog('Initiating full game reset...');
+        const res = await adminFetch(`${API_BASE}/admin/reset`, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+            addAdminLog(`Reset complete: ${data.message || 'Game reset successfully'}`);
+            // Clear dashboard state
+            state.priceHistory = [];
+            state.feedItems = [];
+            state.agents = [];
+            state.eventMarkers = [];
+            state.priceHigh = 932.17;
+            state.priceLow = 932.17;
+            state.currentPrice = 932.17;
+            renderFeed();
+            renderAgentGrid();
+            drawPriceChart();
+            updateGameState();
+            refreshAgents();
+            alert('Game reset complete! You can now start a new game.');
+        } else {
+            addAdminLog(`Reset failed: ${data.error || data.detail || 'Unknown error'}`);
+        }
+    } catch (e) { addAdminLog(`Reset error: ${e.message}`); }
+}
+
 // ── Initialization ────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
-    addAdminLog('Dashboard loaded');
+function initDashboard() {
+    addAdminLog('Dashboard loaded - authenticated');
     connectWS();
     updateGameState();
     refreshAgents();
@@ -710,4 +828,8 @@ document.addEventListener('DOMContentLoaded', () => {
             state.ws.send(JSON.stringify({ type: 'ping' }));
         }
     }, 25000);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    tryAutoAuth();
 });

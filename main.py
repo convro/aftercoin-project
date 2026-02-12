@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from src.config.settings import settings
-from src.db.database import init_db
+from src.db.database import init_db, reset_db
 from src.engine.market import MarketEngine
 from src.engine.trading import TradingEngine
 from src.engine.social import SocialEngine
@@ -208,6 +208,51 @@ async def admin_stop_game(request: Request):
         return JSONResponse(status_code=400, content={"error": "Game not running"})
     await orchestrator.stop_game()
     return {"status": "ok", "message": "Game stopped"}
+
+
+@app.post("/admin/reset")
+async def admin_reset_game(request: Request):
+    """Full game reset: stop game, drop all data, recreate empty schema."""
+    secret = request.headers.get("X-Admin-Secret", "")
+    if secret != settings.ADMIN_SECRET:
+        return JSONResponse(status_code=403, content={"error": "Invalid admin secret"})
+
+    logger.warning("=== FULL GAME RESET INITIATED ===")
+
+    # Stop game if running
+    if orchestrator.is_running:
+        await orchestrator.stop_game()
+        logger.info("Game stopped for reset")
+
+    # Drop and recreate all tables
+    await reset_db()
+    logger.info("Database reset complete - all tables dropped and recreated")
+
+    # Reset orchestrator internal state
+    orchestrator._game_started_at = None
+    orchestrator._game_ends_at = None
+    orchestrator._next_decision_at.clear()
+    orchestrator._tasks.clear()
+
+    # Reset market engine state
+    market_engine._event_log.clear()
+    market_engine._current_price = settings.STARTING_PRICE
+    market_engine.buy_volume = 0.0
+    market_engine.sell_volume = 0.0
+    market_engine.is_frozen = False
+
+    # Reset decision loop conversation history
+    decision_loop._conversation_history.clear()
+
+    # Clear broadcaster event log
+    broadcaster._event_log.clear()
+
+    logger.warning("=== FULL GAME RESET COMPLETE ===")
+
+    return {
+        "status": "ok",
+        "message": "Full game reset complete. All data cleared. Ready to start new game.",
+    }
 
 
 # ── Error Handlers ─────────────────────────────────────────────────────────────
