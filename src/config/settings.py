@@ -13,12 +13,12 @@ class Settings:
     GAME_DURATION_HOURS: int = int(os.getenv("GAME_DURATION_HOURS", "24"))
 
     # LLM Provider: "claude" or "deepseek"
-    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "claude")
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "deepseek")
 
     # Claude models
     CLAUDE_MODEL: str = os.getenv("CLAUDE_MODEL", "claude-haiku-4-20250514")
     # DeepSeek models — deepseek-chat is DeepSeek-V3, deepseek-reasoner is DeepSeek-R1
-    DEEPSEEK_MODEL: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    DEEPSEEK_MODEL: str = os.getenv("DEEPSEEK_MODEL", "deepseek-reasoner")
     DEEPSEEK_API_BASE: str = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com")
 
     # Resolved at runtime based on LLM_PROVIDER
