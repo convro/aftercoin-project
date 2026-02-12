@@ -280,13 +280,10 @@ class GameOrchestrator:
         logger.info("Price update loop started (interval=%ds)", settings.PRICE_UPDATE_INTERVAL)
         while self._running:
             try:
+                old_price = self.market.get_current_price()
                 new_price = await self.market.update_price()
 
-                # Price change percentage (approximate from in-memory state).
-                old_price = self.market.get_current_price()
-                # After update_price, the returned value IS the new price.
-                # We compute change_pct relative to the prior price kept by
-                # the market engine internally; broadcast 0 if unavailable.
+                # Price change percentage relative to the prior price.
                 change_pct = 0.0
                 if old_price and old_price != new_price:
                     change_pct = (new_price - old_price) / old_price

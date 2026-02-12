@@ -134,7 +134,7 @@ class SocialEngine:
 
                     # ── spam check ────────────────────────────────────
                     spam_fine_applied = False
-                    is_spam = await self._check_spam(agent_id, session)
+                    is_spam = await self._check_spam(author_id, session)
                     if is_spam:
                         agent.afc_balance -= settings.SPAM_FINE
                         spam_fine_applied = True
