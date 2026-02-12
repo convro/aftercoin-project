@@ -23,7 +23,7 @@ from src.config.settings import settings
 from src.db.database import async_session
 from src.models.models import (
     Agent, AgentDecision, AgentRole, ActionType, GameState,
-    Trade, Post, LeveragePosition, LeverageStatus, Alliance, AllianceStatus,
+    Trade, TradeStatus, Post, LeveragePosition, LeverageStatus, Alliance, AllianceStatus,
     BlackmailContract, BlackmailStatus, HitContract, ContractStatus,
     Whisper, BalanceSnapshot,
 )
@@ -343,7 +343,6 @@ class AgentDecisionLoop:
             ]
 
             # Compile perception
-            from src.models.models import TradeStatus
             perception = {
                 "agent_id": agent_id,
                 "agent_name": agent.name,
