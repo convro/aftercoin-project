@@ -1,9 +1,10 @@
 """
-Agent Decision Loop - Claude API Integration
-=============================================
-Each agent is powered by a separate Claude API conversation thread.
+Agent Decision Loop - Multi-Provider LLM Integration
+=====================================================
+Each agent is powered by a separate LLM conversation thread.
+Supports both Claude (Anthropic) and DeepSeek (OpenAI-compatible) as backends.
 The decision loop gathers game state, builds a perception prompt,
-calls the Claude API, parses the response, and executes the action.
+calls the configured LLM, parses the response, and executes the action.
 """
 
 import asyncio
@@ -16,6 +17,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import anthropic
+import httpx
 
 from src.config.settings import settings
 from src.db.database import async_session
@@ -42,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 class AgentDecisionLoop:
-    """Manages the decision cycle for all AI agents using the Claude API."""
+    """Manages the decision cycle for all AI agents using Claude or DeepSeek."""
 
     def __init__(
         self,
@@ -55,7 +57,25 @@ class AgentDecisionLoop:
         reputation: ReputationEngine,
         events: EventsEngine,
     ):
-        self.client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        self.provider = settings.LLM_PROVIDER  # "claude" or "deepseek"
+
+        # Initialize the appropriate LLM client
+        if self.provider == "deepseek":
+            self._deepseek_client = httpx.AsyncClient(
+                base_url=settings.DEEPSEEK_API_BASE,
+                headers={
+                    "Authorization": f"Bearer {settings.DEEPSEEK_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                timeout=120.0,
+            )
+            self._claude_client = None
+            logger.info("LLM Provider: DeepSeek (%s)", settings.DEEPSEEK_MODEL)
+        else:
+            self._claude_client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+            self._deepseek_client = None
+            logger.info("LLM Provider: Claude (%s)", settings.CLAUDE_MODEL)
+
         self.market = market
         self.trading = trading
         self.social = social
@@ -119,9 +139,9 @@ class AgentDecisionLoop:
             # 2. Build prompt with current state
             state_prompt = self._build_state_prompt(perception)
 
-            # 3. Call Claude API
+            # 3. Call LLM (Claude or DeepSeek)
             start_time = time.time()
-            response_text, usage = await self._call_claude(agent_id, state_prompt)
+            response_text, usage = await self._call_llm(agent_id, state_prompt)
             latency_ms = int((time.time() - start_time) * 1000)
 
             # 4. Parse response
@@ -351,6 +371,10 @@ class AgentDecisionLoop:
                 "decision_count": agent.decision_count,
                 "total_posts": agent.total_posts,
                 "total_trades": agent.total_trades,
+                # Explicit feature unlock flags
+                "leverage_unlocked": (game_state.current_hour if game_state else 0) >= settings.LEVERAGE_UNLOCK_HOUR,
+                "dark_market_unlocked": (game_state.current_hour if game_state else 0) >= settings.DARK_MARKET_UNLOCK_HOUR,
+                "vote_manipulation_unlocked": (game_state.current_hour if game_state else 0) >= settings.VOTE_MANIP_UNLOCK_HOUR,
             }
 
             return perception
@@ -483,8 +507,8 @@ class AgentDecisionLoop:
 
         return "\n".join(lines)
 
-    async def _call_claude(self, agent_id: int, state_prompt: str) -> tuple[str, dict]:
-        """Call the Claude API for an agent's decision."""
+    async def _call_llm(self, agent_id: int, state_prompt: str) -> tuple[str, dict]:
+        """Call the configured LLM provider (Claude or DeepSeek) for an agent's decision."""
         async with async_session() as session:
             agent = await session.get(Agent, agent_id)
             if not agent:
@@ -495,56 +519,92 @@ class AgentDecisionLoop:
         messages = list(self._conversation_history.get(agent_id, []))
         messages.append({"role": "user", "content": state_prompt})
 
-        try:
-            response = self.client.messages.create(
-                model=settings.AGENT_MODEL,
-                max_tokens=2000,
-                system=system_prompt,
-                messages=messages,
-            )
+        fallback = ("REASONING: API unavailable. Waiting.\nACTION: none\nDETAILS: {}", {
+            "input_tokens": 0, "output_tokens": 0,
+        })
 
-            response_text = response.content[0].text
-            usage = {
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens,
-            }
-
-            # Update conversation history (sliding window)
-            history = self._conversation_history.setdefault(agent_id, [])
-            history.append({"role": "user", "content": state_prompt})
-            history.append({"role": "assistant", "content": response_text})
-            # Keep only last N exchanges
-            if len(history) > self._max_history * 2:
-                self._conversation_history[agent_id] = history[-(self._max_history * 2):]
-
-            return response_text, usage
-
-        except anthropic.APIError as e:
-            logger.error(f"Claude API error for agent {agent_id}: {e}")
-            # Retry logic
-            for attempt in range(3):
-                try:
-                    await asyncio.sleep(2 ** attempt)
-                    response = self.client.messages.create(
-                        model=settings.AGENT_MODEL,
-                        max_tokens=2000,
-                        system=system_prompt,
-                        messages=messages,
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            try:
+                if self.provider == "deepseek":
+                    response_text, usage = await self._call_deepseek(
+                        system_prompt, messages
                     )
-                    response_text = response.content[0].text
-                    usage = {
-                        "input_tokens": response.usage.input_tokens,
-                        "output_tokens": response.usage.output_tokens,
-                    }
-                    return response_text, usage
-                except anthropic.APIError:
-                    continue
+                else:
+                    response_text, usage = self._call_claude(
+                        system_prompt, messages
+                    )
 
-            # Fallback: no action
-            return "REASONING: API unavailable. Waiting.\nACTION: none\nDETAILS: {}", {
-                "input_tokens": 0,
-                "output_tokens": 0,
-            }
+                # Update conversation history (sliding window)
+                history = self._conversation_history.setdefault(agent_id, [])
+                history.append({"role": "user", "content": state_prompt})
+                history.append({"role": "assistant", "content": response_text})
+                if len(history) > self._max_history * 2:
+                    self._conversation_history[agent_id] = history[-(self._max_history * 2):]
+
+                return response_text, usage
+
+            except Exception as e:
+                if attempt < max_retries:
+                    logger.warning(
+                        "LLM call failed for agent %d (attempt %d/%d): %s",
+                        agent_id, attempt + 1, max_retries, e,
+                    )
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    logger.error(
+                        "LLM call failed for agent %d after %d retries: %s",
+                        agent_id, max_retries, e,
+                    )
+                    return fallback
+
+        return fallback
+
+    def _call_claude(self, system_prompt: str, messages: list[dict]) -> tuple[str, dict]:
+        """Call the Anthropic Claude API."""
+        response = self._claude_client.messages.create(
+            model=settings.CLAUDE_MODEL,
+            max_tokens=2000,
+            system=system_prompt,
+            messages=messages,
+        )
+        response_text = response.content[0].text
+        usage = {
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        }
+        return response_text, usage
+
+    async def _call_deepseek(self, system_prompt: str, messages: list[dict]) -> tuple[str, dict]:
+        """Call the DeepSeek API (OpenAI-compatible endpoint).
+
+        DeepSeek uses the standard OpenAI chat completions format:
+        - System prompt goes as a system message
+        - Same user/assistant message format
+        - Response in choices[0].message.content
+        """
+        # Build OpenAI-format messages with system prompt first
+        oai_messages = [{"role": "system", "content": system_prompt}]
+        oai_messages.extend(messages)
+
+        payload = {
+            "model": settings.DEEPSEEK_MODEL,
+            "messages": oai_messages,
+            "max_tokens": 2000,
+            "temperature": 0.8,
+            "top_p": 0.95,
+        }
+
+        response = await self._deepseek_client.post("/v1/chat/completions", json=payload)
+        response.raise_for_status()
+        data = response.json()
+
+        response_text = data["choices"][0]["message"]["content"]
+        usage = {
+            "input_tokens": data.get("usage", {}).get("prompt_tokens", 0),
+            "output_tokens": data.get("usage", {}).get("completion_tokens", 0),
+        }
+        return response_text, usage
 
     def _parse_response(self, response_text: str) -> tuple[str, ActionType, dict]:
         """Parse the agent's response into reasoning, action type, and details."""
@@ -911,10 +971,15 @@ class AgentDecisionLoop:
             agent.decision_count += 1
             agent.last_decision_at = datetime.utcnow()
 
-            # Estimate cost (Haiku pricing: $0.25/M input, $1.25/M output)
+            # Estimate cost per provider
+            # Claude Haiku: $0.25/M input, $1.25/M output
+            # DeepSeek-V3: $0.27/M input, $1.10/M output (cache miss)
             input_tokens = usage.get("input_tokens", 0)
             output_tokens = usage.get("output_tokens", 0)
-            cost = (input_tokens * 0.25 + output_tokens * 1.25) / 1_000_000
+            if self.provider == "deepseek":
+                cost = (input_tokens * 0.27 + output_tokens * 1.10) / 1_000_000
+            else:
+                cost = (input_tokens * 0.25 + output_tokens * 1.25) / 1_000_000
 
             decision = AgentDecision(
                 agent_id=agent_id,

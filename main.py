@@ -117,6 +117,7 @@ async def lifespan(app: FastAPI):
         logger.info("Auto-starting game...")
         await orchestrator.start_game()
 
+    logger.info("LLM Provider: %s (model: %s)", settings.LLM_PROVIDER, settings.AGENT_MODEL)
     logger.info("API server ready on port %d", settings.API_PORT)
     logger.info("Dashboard: http://localhost:%d/dashboard", settings.API_PORT)
     logger.info("=" * 60)
@@ -167,6 +168,8 @@ async def root():
         "platform": "AFTERCOIN",
         "version": "1.0.0",
         "status": "running" if orchestrator.is_running else "idle",
+        "llm_provider": settings.LLM_PROVIDER,
+        "llm_model": settings.AGENT_MODEL,
         "dashboard": f"http://localhost:{settings.API_PORT}/dashboard",
         "api_docs": f"http://localhost:{settings.API_PORT}/docs",
         "websocket": f"ws://localhost:{settings.WS_PORT}",

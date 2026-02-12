@@ -6,11 +6,28 @@ load_dotenv()
 
 class Settings:
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
+    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
     ADMIN_SECRET: str = os.getenv("ADMIN_SECRET", "aftercoin-admin-2026")
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./aftercoin.db")
 
     GAME_DURATION_HOURS: int = int(os.getenv("GAME_DURATION_HOURS", "24"))
-    AGENT_MODEL: str = os.getenv("AGENT_MODEL", "claude-haiku-4-20250514")
+
+    # LLM Provider: "claude" or "deepseek"
+    LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "claude")
+
+    # Claude models
+    CLAUDE_MODEL: str = os.getenv("CLAUDE_MODEL", "claude-haiku-4-20250514")
+    # DeepSeek models — deepseek-chat is DeepSeek-V3, deepseek-reasoner is DeepSeek-R1
+    DEEPSEEK_MODEL: str = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+    DEEPSEEK_API_BASE: str = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com")
+
+    # Resolved at runtime based on LLM_PROVIDER
+    @property
+    def AGENT_MODEL(self) -> str:
+        if self.LLM_PROVIDER == "deepseek":
+            return self.DEEPSEEK_MODEL
+        return self.CLAUDE_MODEL
+
     AGENT_DECISION_INTERVAL_MIN: int = int(os.getenv("AGENT_DECISION_INTERVAL_MIN", "180"))
     AGENT_DECISION_INTERVAL_MAX: int = int(os.getenv("AGENT_DECISION_INTERVAL_MAX", "300"))
 
